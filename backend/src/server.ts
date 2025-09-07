@@ -2,20 +2,21 @@ import { validateEnv } from "./utils/validateEnv";
 import { App } from "./app";
 import { PostController } from "./post/post.controller";
 import "dotenv/config";
-import { AuthenticationController } from "./authentication/authentication.controller";
-import { UserController } from "./user/user.controller";
-import { ReportController } from "./report/report.controller";
+import { dataSource } from "./orm-data-source";
 
 validateEnv();
 
-const app = new App(
-  [
-    new PostController(),
-    new AuthenticationController(),
-    new UserController(),
-    new ReportController(),
-  ],
-  5000,
-);
+(async () => {
+  try {
+    await dataSource.initialize();
+    console.log("DB has been inizialized");
+  } catch (error) {
+    console.log("Error while connecting to DB");
+
+    return error;
+  }
+})();
+
+const app = new App([new PostController()], 5000);
 
 app.listen();

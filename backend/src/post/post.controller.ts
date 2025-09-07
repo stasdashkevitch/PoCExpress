@@ -1,16 +1,16 @@
 import * as express from "express";
 import { Post } from "./post.interface";
-import { postModel } from "./post.model";
 import { validationMidleware } from "../midleware/validation.midleware";
 import { CreatePostDto } from "./create-post.dto";
 import { PostNotFoundException } from "../exception/post-not-found.exception";
-import { authMidleware } from "../midleware/auth.midleware";
 import { RequestWithUser } from "interface/request-with-user.interface";
+import { dataSource } from "../orm-data-source";
+import { PostEntity } from "./post.entity";
 
 export class PostController {
   public path = "/posts";
   public router = express.Router();
-  private post = postModel;
+  private postRepository = dataSource.getRepository(PostEntity);
 
   constructor() {
     this.initializeRoutes();
@@ -21,49 +21,53 @@ export class PostController {
     this.router.get(this.path, this.getAllPosts);
     // GET BY ID
     this.router.get(`${this.path}/:id`, this.getPostById);
-    // POST, PATCH, DELETE WITH AUTH
-    this.router
-      .all(`${this.path}{*splat}`, authMidleware)
-      .post(this.path, validationMidleware(CreatePostDto), this.createPost)
-      .patch(
-        `${this.path}/:id`,
-        validationMidleware(CreatePostDto, true),
-        this.modifyPost,
-      )
-      .delete(`${this.path}/:id`, this.deletePost);
+    // POST
+    this.router.post(
+      this.path,
+      validationMidleware(CreatePostDto),
+      this.createPost,
+    );
+    // PATCH
+    this.router.patch(
+      `${this.path}/:id`,
+      validationMidleware(CreatePostDto, true),
+      this.modifyPost,
+    );
+    // DELETE
+    this.router.delete(`${this.path}/:id`, this.deletePost);
   }
 
   getAllPosts = (req: express.Request, res: express.Response) => {
-    this.post.find().then((posts) => res.send(posts));
+    const posts = this.postRepository.find();
+
+    return posts;
   };
 
-  getPostById = (
+  getPostById = async (
     req: express.Request,
     res: express.Response,
     next: express.NextFunction,
   ) => {
     const id = req.params.id;
 
-    this.post.findById(id).then((post) => {
-      if (post) {
-        res.send(post);
-      } else {
-        next(new PostNotFoundException(id));
-      }
-    });
+    const post = await this.postRepository.findOneBy({ id: Number(id) });
+
+    if (post) {
+      res.send(post);
+    } else {
+      next(new PostNotFoundException(id));
+    }
   };
 
   createPost = async (req: RequestWithUser, res: express.Response) => {
     const postData: Post = req.body;
-    const createdPost = new this.post({ ...postData, author: req.user._id });
+    const newPost = this.postRepository.create(postData);
+    await this.postRepository.save(newPost);
 
-    const savedPost = await createdPost.save();
-    await savedPost.populate("author", "-password");
-
-    res.send(savedPost);
+    res.send(newPost);
   };
 
-  modifyPost = (
+  modifyPost = async (
     req: express.Request,
     res: express.Response,
     next: express.NextFunction,
@@ -71,28 +75,30 @@ export class PostController {
     const id = req.params.id;
     const postData = req.body;
 
-    this.post.findByIdAndUpdate(id, postData, { new: true }).then((newPost) => {
-      if (newPost) {
-        res.send(newPost);
-      } else {
-        next(new PostNotFoundException(id));
-      }
-    });
+    await this.postRepository.update(id, postData);
+
+    const updatedPost = this.postRepository.findOneBy({ id: +id });
+
+    if (updatedPost) {
+      res.send(updatedPost);
+    } else {
+      next(new PostNotFoundException(id));
+    }
   };
 
-  deletePost = (
+  deletePost = async (
     req: express.Request,
     res: express.Response,
     next: express.NextFunction,
   ) => {
     const id = req.params.id;
 
-    this.post.findByIdAndDelete(id).then((successResponse) => {
-      if (successResponse) {
-        res.send(200);
-      } else {
-        next(new PostNotFoundException(id));
-      }
-    });
+    const deleteResponse = await this.postRepository.delete(id);
+
+    if (deleteResponse.raw[1]) {
+      res.send(200);
+    } else {
+      next(new PostNotFoundException(id));
+    }
   };
 }
