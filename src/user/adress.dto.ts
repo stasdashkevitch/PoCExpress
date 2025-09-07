@@ -5,4 +5,6 @@ export class AdressDto {
   city: string;
   @IsString()
   street: string;
+  @IsString()
+  country: string;
 }
